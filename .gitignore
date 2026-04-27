@@ -1,0 +1,3 @@
+logs/
+.env
+.claude/settings.local.json.bak

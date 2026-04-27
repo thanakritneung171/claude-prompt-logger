@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.1.0_x64__8wekyb3d8bbwe\\pwsh.exe\" -NoProfile -File \"C:\\Users\\Thanakrit_C\\Desktop\\Log Prompt\\claude-prompt-logger\\.claude\\hooks\\log_usage.ps1\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.1.0_x64__8wekyb3d8bbwe\\pwsh.exe\" -NoProfile -File \"C:\\Users\\Thanakrit_C\\Desktop\\Log Prompt\\claude-prompt-logger\\.claude\\hooks\\log_prompt.ps1\""
+          }
+        ]
+      }
+    ]
+  }
+}

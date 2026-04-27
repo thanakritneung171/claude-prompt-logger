@@ -1,0 +1,6 @@
+{
+  "prompt": "Hello, this is a test prompt for the logger system. Testing Thai: สวัสดีครับ",
+  "session_id": "test-session-001",
+  "cwd": "C:\\test",
+  "transcript_path": "C:\\test\\transcript.jsonl"
+}
