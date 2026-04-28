@@ -1,9 +1,9 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { verifyApiKey } from './auth';
-import { getDashboardData, insertPromptLog, insertUsageLog } from './db';
+import { clearAllLogs, getDashboardData, insertPromptLog, insertUsageLog } from './db';
 import type { Env } from './db';
-import { dashboardPage } from './dashboard';
+import { clearPage, dashboardPage } from './dashboard';
 
 export type { Env };
 
@@ -24,8 +24,9 @@ export default {
     }
 
     if (pathname === '/' && method === 'GET') {
+      const cleared = new URL(req.url).searchParams.get('cleared') === '1';
       const data = await getDashboardData(env);
-      return new Response(dashboardPage(data), {
+      return new Response(dashboardPage(data, cleared), {
         headers: { 'Content-Type': 'text/html;charset=utf-8' },
       });
     }
@@ -45,6 +46,25 @@ export default {
       } catch (err) {
         return json({ ok: false, error: String(err) }, 400);
       }
+    }
+
+    if (pathname === '/clear' && method === 'GET') {
+      return new Response(clearPage(), {
+        headers: { 'Content-Type': 'text/html;charset=utf-8' },
+      });
+    }
+
+    if (pathname === '/clear' && method === 'POST') {
+      const form = await req.formData();
+      const key = form.get('api_key');
+      if (!env.API_KEY || key !== env.API_KEY) {
+        return new Response(clearPage('API Key ไม่ถูกต้อง'), {
+          status: 401,
+          headers: { 'Content-Type': 'text/html;charset=utf-8' },
+        });
+      }
+      await clearAllLogs(env);
+      return Response.redirect(new URL('/?cleared=1', req.url).toString(), 303);
     }
 
     if (pathname === '/api/usage' && method === 'POST') {

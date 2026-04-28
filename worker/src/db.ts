@@ -96,6 +96,13 @@ export interface DashboardData {
   recentRows: RecentRow[];
 }
 
+export async function clearAllLogs(env: Env): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM prompt_logs'),
+    env.DB.prepare('DELETE FROM usage_logs'),
+  ]);
+}
+
 export async function getDashboardData(env: Env): Promise<DashboardData> {
   const [countPrompts, countSessions, tokenTotals, modelBreakdown, recentRows] =
     await Promise.all([

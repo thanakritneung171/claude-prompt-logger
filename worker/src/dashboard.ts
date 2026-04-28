@@ -56,9 +56,67 @@ const CSS = `
   .tag { display: inline-block; background: #fef3c7; color: #92400e; border-radius: 4px; padding: 1px 7px; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .prompt-cell { max-width: 300px; word-break: break-word; color: #3d2d00; line-height: 1.45; }
+  .btn-danger { background: #b91c1c; color: #fff; border: none; border-radius: 6px; padding: 7px 16px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn-danger:hover { background: #991b1b; }
+  .btn-secondary { background: transparent; color: #f5d87a; border: 1px solid #f5d87a55; border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn-secondary:hover { background: #ffffff18; }
+  .warn-box { background: #fff7ed; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px 24px; margin-bottom: 28px; }
+  .warn-box h2 { color: #b45309; font-size: 15px; margin-bottom: 8px; }
+  .warn-box p { color: #78350f; line-height: 1.6; margin-bottom: 16px; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 12px; font-weight: 600; color: #9a7a2a; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .6px; }
+  .form-group input { width: 100%; max-width: 340px; padding: 8px 12px; border: 1px solid #e8dfc0; border-radius: 6px; font-size: 14px; background: #fff; }
+  .alert { border-radius: 6px; padding: 10px 16px; margin-bottom: 20px; font-size: 13px; font-weight: 600; }
+  .alert-error { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+  .alert-success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+  header nav { margin-left: auto; }
+  #popup-overlay { position:fixed; inset:0; background:#00000060; z-index:998; display:flex; align-items:center; justify-content:center; }
+  #popup { background:#fff; border-radius:14px; padding:36px 48px; text-align:center; box-shadow:0 8px 40px #0003; min-width:280px; }
+  #popup .icon { font-size:40px; margin-bottom:12px; }
+  #popup p { font-size:17px; font-weight:600; color:#166534; margin-bottom:24px; }
+  #popup a { display:inline-block; background:#1a1200; color:#f5d87a; padding:10px 36px; border-radius:8px; font-size:14px; font-weight:700; text-decoration:none; }
+  #popup a:hover { background:#2d2006; }
 `;
 
-export function dashboardPage(data: DashboardData): string {
+export function clearPage(error?: string): string {
+  const alert = error
+    ? `<div class="alert alert-error">${esc(error)}</div>`
+    : '';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Clear Data — Claude Prompt Logger</title>
+  <style>${CSS}</style>
+</head>
+<body>
+  <header>
+    <h1>Claude Prompt Logger</h1>
+    <nav><a class="btn-secondary" href="/">← Back</a></nav>
+  </header>
+  <main style="max-width:600px">
+    ${alert}
+    <div class="warn-box">
+      <h2>⚠️ Clear All Data</h2>
+      <p>ลบข้อมูลทั้งหมดใน <strong>prompt_logs</strong> และ <strong>usage_logs</strong> อย่างถาวร ไม่สามารถกู้คืนได้</p>
+      <form method="POST" action="/clear">
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="password" name="api_key" placeholder="ใส่ API Key เพื่อยืนยัน" required autofocus>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <button type="submit" class="btn-danger">ลบข้อมูลทั้งหมด</button>
+          <a href="/" class="btn-secondary">ยกเลิก</a>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>`;
+}
+
+export function dashboardPage(data: DashboardData, cleared = false): string {
   const kpiCards = [
     { label: 'Total Prompts', value: num(data.totalPrompts) },
     { label: 'Sessions', value: num(data.totalSessions) },
@@ -108,9 +166,11 @@ export function dashboardPage(data: DashboardData): string {
   <style>${CSS}</style>
 </head>
 <body>
+  ${cleared ? `<div id="popup-overlay"><div id="popup"><div class="icon">✅</div><p>ลบข้อมูลเรียบร้อยแล้ว</p><a href="/">ตกลง</a></div></div>` : ''}
   <header>
     <h1>Claude Prompt Logger</h1>
     <span>auto-refresh every 60s</span>
+    <nav><a class="btn-danger" href="/clear">Clear Data</a></nav>
   </header>
   <main>
     <div class="grid">
