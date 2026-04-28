@@ -56,6 +56,7 @@ try {
     }
 
     Write-LogEntry -Path $logFile -Object $entry
+    Send-LogToWorker -Endpoint "/api/usage" -Body $entry
 
     # Build combined record: last prompt for this session + token usage
     $lastPrompt = ""

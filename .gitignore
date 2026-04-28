@@ -1,3 +1,7 @@
 logs/
 .env
 .claude/settings.local.json.bak
+worker/config.ps1
+worker/.dev.vars
+worker/worker-configuration.d.ts
+worker/node_modules/

@@ -1,0 +1,17 @@
+{
+  "name": "claude-prompt-logger-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "db:apply:local": "wrangler d1 execute prompt-logger --local --file=schema.sql",
+    "db:apply": "wrangler d1 execute prompt-logger --remote --file=schema.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^4.0.0"
+  }
+}

@@ -27,6 +27,35 @@ function Get-ApproxTokens {
     return [int][math]::Ceiling($Text.Length / 3.5)
 }
 
+function Send-LogToWorker {
+    param(
+        [string]$Endpoint,
+        [hashtable]$Body
+    )
+    try {
+        # config.ps1 is 3 levels up from lib/ → project root → worker/config.ps1
+        $configPath = Join-Path $PSScriptRoot "..\..\..\worker\config.ps1"
+        if (-not (Test-Path $configPath)) { return }
+        . $configPath
+        if (-not $WORKER_URL) { return }
+
+        $uri   = $WORKER_URL.TrimEnd('/') + $Endpoint
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Compress -Depth 10))
+
+        $req = [System.Net.HttpWebRequest]::Create($uri)
+        $req.Method        = "POST"
+        $req.ContentType   = "application/json"
+        $req.Timeout       = 5000
+        $req.ContentLength = $bytes.Length
+        $req.Headers.Add("X-Api-Key", $WORKER_API_KEY)
+
+        $stream = $req.GetRequestStream()
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Close()
+        $req.GetResponse().Close()
+    } catch { }
+}
+
 function Invoke-LogRotation {
     param(
         [string]$Path,

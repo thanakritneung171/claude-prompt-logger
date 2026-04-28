@@ -33,6 +33,7 @@ try {
     }
 
     Write-LogEntry -Path $logFile -Object $entry
+    Send-LogToWorker -Endpoint "/api/prompt" -Body $entry
 
 } catch {
     try {
