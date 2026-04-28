@@ -125,6 +125,142 @@ X-Api-Key: <your-api-key>
 
 ---
 
+## Dashboard — ลอจิกการแสดงผล
+
+เปิด `GET /` จะได้ HTML ที่ render จากข้อมูล D1 ทันที (server-rendered, ไม่มี client-side fetch)
+
+### ภาพรวม
+
+```
+GET /
+  └─ getDashboardData()          ← รัน 5 queries พร้อมกัน (Promise.all)
+        │
+        ├─ Query 1: COUNT prompt_logs          → "Total Prompts" card
+        ├─ Query 2: COUNT DISTINCT session_id  → "Sessions" card
+        ├─ Query 3: SUM tokens (usage_logs)    → token breakdown cards
+        ├─ Query 4: GROUP BY model             → Model Breakdown table
+        └─ Query 5: JOIN usage + prompt        → Recent Activity table (50 rows)
+              │
+        dashboardPage(data)     ← สร้าง HTML string
+              │
+        Response (text/html)
+```
+
+Auto-refresh ทุก 60 วินาทีด้วย `<meta http-equiv="refresh" content="60">` — ไม่ใช้ JavaScript polling
+
+---
+
+### Query 1–3 — KPI Cards
+
+```sql
+-- Q1: จำนวน prompt ทั้งหมด
+SELECT COUNT(*) as n FROM prompt_logs
+
+-- Q2: จำนวน session ที่ unique (นับจาก usage_logs)
+SELECT COUNT(DISTINCT session_id) as n FROM usage_logs
+
+-- Q3: รวม token ทุกประเภท
+SELECT
+  SUM(input_tokens)                as total_input,
+  SUM(output_tokens)               as total_output,
+  SUM(cache_creation_input_tokens) as total_cache_create,
+  SUM(cache_read_input_tokens)     as total_cache_read,
+  SUM(total_tokens)                as grand_total
+FROM usage_logs
+```
+
+KPI ที่แสดง:
+
+| Card | มาจาก |
+|------|-------|
+| Total Prompts | Q1: `COUNT(*)` |
+| Sessions | Q2: `COUNT(DISTINCT session_id)` |
+| Total Tokens | Q3: `grand_total` |
+| Avg / Session | `grand_total ÷ sessions` (คำนวณใน TypeScript) |
+| Input | Q3: `total_input` |
+| Output | Q3: `total_output` |
+| Cache Write | Q3: `total_cache_create` |
+| Cache Read | Q3: `total_cache_read` |
+
+---
+
+### Query 4 — Model Breakdown Table
+
+```sql
+SELECT model, COUNT(*) as sessions, SUM(total_tokens) as tokens
+FROM usage_logs
+GROUP BY model
+ORDER BY sessions DESC
+```
+
+แสดงเป็นตาราง: **Model | Sessions | Tokens** — เรียงจาก model ที่ใช้บ่อยสุด
+
+---
+
+### Query 5 — Recent Activity Table (50 rows)
+
+นี่คือ query ที่ซับซ้อนที่สุด — ต้องจับคู่แต่ละ `usage_log` กับ `prompt` ที่ถูกส่งก่อนหน้า
+
+**ปัญหา:** `prompt_logs` และ `usage_logs` เป็นคนละ table — ใน session เดียวกันมีหลาย prompt และหลาย usage สลับกัน จึงต้องหาว่า usage แต่ละรายการมาจาก prompt ไหน
+
+**วิธีแก้ — Correlated Subquery:**
+
+```sql
+SELECT
+  u.session_id, u.model,
+  u.input_tokens, u.output_tokens,
+  u.cache_creation_input_tokens, u.cache_read_input_tokens,
+  u.total_tokens, u.logged_at,
+
+  -- หา prompt ล่าสุดที่ส่ง "ก่อนหรือพร้อมกัน" กับ usage นี้ ใน session เดียวกัน
+  (SELECT p.prompt
+   FROM prompt_logs p
+   WHERE p.session_id = u.session_id
+     AND p.logged_at <= u.logged_at   -- ต้องเกิดขึ้นก่อน response
+   ORDER BY p.logged_at DESC
+   LIMIT 1) as prompt,
+
+  (SELECT p.approx_tokens
+   FROM prompt_logs p
+   WHERE p.session_id = u.session_id
+     AND p.logged_at <= u.logged_at
+   ORDER BY p.logged_at DESC
+   LIMIT 1) as approx_tokens
+
+FROM usage_logs u
+ORDER BY u.logged_at DESC
+LIMIT 50
+```
+
+**ทำไมไม่ใช้ `MAX(rowid)`:**
+ถ้าใช้ `MAX(rowid) GROUP BY session_id` จะได้ prompt **ล่าสุดของทั้ง session** มาใช้กับ usage ทุกรายการ — ทำให้ทุก row ใน session แสดง prompt เดิม (row ล่าสุด) แทนที่จะเป็น prompt ที่ตรงกับการตอบนั้นๆ
+
+**สิ่งที่แสดงในตาราง:**
+
+| คอลัมน์ | มาจาก | หมายเหตุ |
+|---------|-------|---------|
+| Time (BKK) | `u.logged_at` | แปลงเป็น Asia/Bangkok timezone |
+| Session | `u.session_id` | แสดงแค่ 8 ตัวแรก |
+| Model | `u.model` | แสดงเป็น badge |
+| Prompt | correlated subquery | ตัดที่ 100 ตัวอักษร + `…` |
+| Input | `u.input_tokens` | |
+| Output | `u.output_tokens` | |
+| Cache↑ | `u.cache_creation_input_tokens` | |
+| Cache↓ | `u.cache_read_input_tokens` | |
+| Total | `u.total_tokens` | ตัวหนา |
+
+---
+
+### ข้อมูลของคุณจะปรากฏบน Dashboard เมื่อ
+
+1. ส่ง `POST /api/prompt` → ข้อมูลเข้า `prompt_logs` → **Total Prompts** เพิ่มขึ้น
+2. ส่ง `POST /api/usage` → ข้อมูลเข้า `usage_logs` → **Sessions, Tokens, Model Breakdown, Recent Activity** อัปเดต
+3. Dashboard refresh (60 วินาที หรือกด F5) → queries รันใหม่ → ข้อมูลล่าสุดแสดง
+
+> ข้อมูลจากทุกโปรเจกต์ที่ใช้ `session_id` เดียวกันจะถูกนับรวมเป็น session เดียวกัน — ใช้ UUID ที่ unique ต่อการสนทนาหนึ่งๆ เพื่อแยก session ให้ถูกต้อง
+
+---
+
 ## ตัวอย่างการเรียก
 
 ### PowerShell

@@ -1,10 +1,51 @@
 # claude-prompt-logger
 
-บันทึก prompt ทุกครั้งที่ส่งใน Claude Code พร้อมจำนวน token และ usage ลงไฟล์ JSONL ผ่านระบบ hooks
+บันทึก prompt ทุกครั้งที่ส่งใน Claude Code พร้อมจำนวน token และ usage — เก็บทั้งลงไฟล์ JSONL ในเครื่องและส่งขึ้น Cloudflare D1 ผ่าน Worker พร้อม dashboard แสดงสถิติ
 
 ---
 
-## วิธีติดตั้ง
+## โครงสร้างโปรเจค
+
+```
+claude-prompt-logger/
+├── .claude/
+│   ├── settings.local.json        # hook config (สร้างโดย install.ps1)
+│   └── hooks/
+│       ├── log_prompt.ps1         # UserPromptSubmit hook
+│       ├── log_usage.ps1          # Stop hook
+│       └── lib/
+│           └── common.ps1         # shared helpers (Write-LogEntry, Send-LogToWorker ฯลฯ)
+├── logs/                          # gitignored
+│   ├── prompts.jsonl              # prompt ทุกครั้งที่ส่ง
+│   ├── usage.jsonl                # token usage ทุก response
+│   ├── combined.jsonl             # prompt + token usage ใน record เดียว
+│   └── summary.log               # สรุปแบบข้อความอ่านง่าย
+├── worker/                        # Cloudflare Worker + Dashboard
+│   ├── src/
+│   │   ├── index.ts              # router
+│   │   ├── auth.ts               # API key verification
+│   │   ├── db.ts                 # D1 helpers + queries
+│   │   └── dashboard.ts          # server-rendered HTML
+│   ├── schema.sql                # D1 table definitions
+│   ├── wrangler.jsonc            # Worker config
+│   ├── config.example.ps1        # template config สำหรับ hook
+│   ├── config.ps1                # ค่าจริง (gitignored)
+│   ├── .dev.vars                 # local dev secrets (gitignored)
+│   └── ARCHITECTURE.md           # อธิบาย logic ของ worker
+├── scripts/
+│   ├── install.ps1               # ติดตั้ง/อัพเดต hook settings
+│   └── view_logs.ps1             # ดู log แบบตารางหรือ JSON
+├── tests/
+│   ├── test_hooks.ps1            # test suite (PASS 4/4)
+│   └── fixtures/
+├── INTEGRATION.md                # คู่มือเชื่อมต่อจากโปรเจคอื่น
+├── .gitignore
+└── README.md
+```
+
+---
+
+## วิธีติดตั้ง (Hook)
 
 ### ความต้องการ
 - Windows 11
@@ -23,12 +64,45 @@ pwsh -NoProfile -File scripts\install.ps1
 - ตรวจสอบว่า PowerShell 7.x ถูกติดตั้ง
 - สร้างโฟลเดอร์ `logs/` ถ้ายังไม่มี
 - สร้าง `.claude/settings.local.json` พร้อม absolute path ที่ถูกต้อง
-- แสดง path ของ log file ทั้งหมด
 
 ```powershell
-# 3. รัน test เพื่อตรวจสอบว่าทุกอย่างทำงานได้
+# 3. รัน test เพื่อตรวจสอบ
 pwsh -NoProfile -File tests\test_hooks.ps1
 # ควรแสดง: PASS 4/4
+```
+
+---
+
+## วิธีติดตั้ง (Worker + D1)
+
+### ความต้องการเพิ่มเติม
+- Node.js 18+
+- Cloudflare account + Wrangler CLI (`npm i -g wrangler`)
+
+### ขั้นตอน
+
+```bash
+cd worker
+npm install
+
+# สร้าง tables บน D1 (ทำครั้งเดียว)
+npm run db:apply
+
+# ตั้ง API Key บน Cloudflare (ทำครั้งเดียว)
+wrangler secret put API_KEY
+
+# Deploy
+npm run deploy
+```
+
+หลัง deploy:
+1. Copy `worker/config.example.ps1` → `worker/config.ps1`
+2. ใส่ Worker URL และ API Key ที่ตั้งไว้
+
+```powershell
+# worker/config.ps1
+$WORKER_URL     = "https://claude-prompt-logger.xxx.workers.dev"
+$WORKER_API_KEY = "your-api-key"
 ```
 
 ---
@@ -37,27 +111,22 @@ pwsh -NoProfile -File tests\test_hooks.ps1
 
 หลังติดตั้งแล้ว **ปิดและเปิด Claude Code session ใหม่** hooks จะทำงานอัตโนมัติทุกครั้งที่:
 
-- **ส่ง prompt** → บันทึกลง `logs/prompts.jsonl`
-- **จบ response** → บันทึก token usage ลง `logs/usage.jsonl`, `logs/combined.jsonl` และ `logs/summary.log`
+- **ส่ง prompt** → บันทึกลง `logs/prompts.jsonl` + ส่งขึ้น D1 ผ่าน Worker
+- **จบ response** → บันทึก token usage ลง `logs/usage.jsonl`, `logs/combined.jsonl`, `logs/summary.log` + ส่งขึ้น D1
 
-ตัวอย่างข้อมูลใน `logs/prompts.jsonl`:
-```json
-{"timestamp":"2026-04-27T10:00:00+07:00","session_id":"abc123","cwd":"C:\\project","char_count":48,"approx_tokens":14,"prompt":"สวัสดีครับ ช่วยอธิบาย async/await ในภาษา Python หน่อยได้ไหม"}
-```
+> JSONL ไฟล์ในเครื่องยังคงทำงานเป็น fallback เสมอ แม้ Worker จะไม่พร้อมใช้งาน
 
-ตัวอย่างข้อมูลใน `logs/usage.jsonl`:
-```json
-{"timestamp":"2026-04-27T10:00:01+07:00","session_id":"abc123","model":"claude-sonnet-4-6","input_tokens":1234,"output_tokens":567,"cache_creation_input_tokens":0,"cache_read_input_tokens":8000,"total_tokens":9801}
-```
+### Dashboard
 
-ตัวอย่างข้อมูลใน `logs/combined.jsonl` (prompt + token usage ใน record เดียว):
-```json
-{"timestamp":"2026-04-27T10:00:01+07:00","session_id":"abc123","model":"claude-sonnet-4-6","prompt":"สวัสดีครับ ช่วยอธิบาย async/await ในภาษา Python หน่อยได้ไหม","input_tokens":1234,"output_tokens":567,"cache_creation_input_tokens":0,"cache_read_input_tokens":8000,"total_tokens":9801}
-```
+เปิดในเบราว์เซอร์ที่ Worker URL เพื่อดูสถิติ:
+- KPI: จำนวน prompts, sessions, total tokens, avg tokens/session
+- Model breakdown
+- Recent activity 50 รายการ (prompt + token breakdown)
+- ปุ่ม Clear Data (ต้องใส่ API Key ยืนยัน)
 
 ---
 
-## วิธีดู log
+## วิธีดู log (local)
 
 ```powershell
 # ดู 10 รายการล่าสุด (แบบตาราง)
@@ -71,11 +140,6 @@ pwsh -NoProfile -File scripts\view_logs.ps1 -Session "abc123"
 
 # export เป็น JSON
 pwsh -NoProfile -File scripts\view_logs.ps1 -Tail 5 -Format json
-```
-
-ดู summary แบบข้อความ:
-```powershell
-Get-Content logs\summary.log
 ```
 
 ---
@@ -94,59 +158,43 @@ Rename-Item .claude\settings.local.json.disabled .claude\settings.local.json
 
 ---
 
+## เอกสารเพิ่มเติม
+
+| ไฟล์ | เนื้อหา |
+|------|---------|
+| [INTEGRATION.md](INTEGRATION.md) | คู่มือเชื่อมต่อจากโปรเจคอื่น (endpoints, ตัวอย่างโค้ด) |
+| [worker/ARCHITECTURE.md](worker/ARCHITECTURE.md) | อธิบายโครงสร้าง Worker, logic dashboard, security |
+
+---
+
 ## Troubleshooting
 
-### ปัญหา: Hook ไม่ทำงาน (ไม่มีไฟล์ใน `logs/`)
+### Hook ไม่ทำงาน (ไม่มีไฟล์ใน `logs/`)
 
-1. ตรวจสอบสถานะ hooks ใน Claude Code ด้วยคำสั่ง `/hooks`
-2. ตรวจสอบว่า `.claude/settings.local.json` มีอยู่และ path ถูกต้อง:
+1. ตรวจสอบ hooks ใน Claude Code ด้วย `/hooks`
+2. ตรวจสอบ `.claude/settings.local.json`:
    ```powershell
    Get-Content .claude\settings.local.json | ConvertFrom-Json
    ```
-3. รัน install.ps1 ใหม่:
-   ```powershell
-   pwsh -NoProfile -File scripts\install.ps1
-   ```
+3. รัน install.ps1 ใหม่
 4. ตรวจสอบ `logs\summary.log` ว่ามี error หรือไม่
-5. ต้อง **restart Claude Code session** หลังติดตั้ง hooks ใหม่
+5. **Restart Claude Code session**
 
----
+### Worker ไม่รับข้อมูล
 
-### ปัญหา: PowerShell 7 ไม่พบ
+1. ตรวจสอบ `config.ps1` มี URL และ API Key ถูกต้อง
+2. ทดสอบ connectivity:
+   ```powershell
+   Invoke-RestMethod "$WORKER_URL/health"
+   # ควรได้: @{ok=True}
+   ```
+3. ตรวจสอบ API Key ตรงกับที่ตั้งใน Cloudflare:
+   ```bash
+   wrangler secret list
+   ```
 
-ติดตั้งผ่าน winget:
+### PowerShell 7 ไม่พบ
+
 ```powershell
 winget install Microsoft.PowerShell --silent --accept-package-agreements
-```
-
-หรือดาวน์โหลดจาก [github.com/PowerShell/PowerShell/releases](https://github.com/PowerShell/PowerShell/releases)
-
----
-
-## โครงสร้างโปรเจค
-
-```
-claude-prompt-logger/
-├── .claude/
-│   ├── settings.local.json        # hook config (สร้างโดย install.ps1)
-│   └── hooks/
-│       ├── log_prompt.ps1         # UserPromptSubmit hook
-│       ├── log_usage.ps1          # Stop hook
-│       └── lib/
-│           └── common.ps1         # shared helpers
-├── logs/                           # gitignored
-│   ├── prompts.jsonl              # prompt ทุกครั้งที่ส่ง
-│   ├── usage.jsonl                # token usage ทุก response
-│   ├── combined.jsonl             # prompt + token usage ใน record เดียว
-│   └── summary.log                # สรุปแบบข้อความอ่านง่าย
-├── tests/
-│   ├── test_hooks.ps1             # test suite (PASS 4/4)
-│   └── fixtures/
-│       ├── mock_prompt_payload.json
-│       └── mock_transcript.jsonl
-├── scripts/
-│   ├── install.ps1                # ติดตั้ง/อัพเดต hook settings
-│   └── view_logs.ps1              # ดู log แบบตารางหรือ JSON
-├── .gitignore
-└── README.md
 ```
