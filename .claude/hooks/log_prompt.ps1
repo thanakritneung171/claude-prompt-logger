@@ -9,6 +9,8 @@ $summaryFile = Join-Path $projectRoot "logs\summary.log"
 
 . $libPath
 
+if ($env:HOOK_PIPE_CTX -eq "1") { exit 0 }
+
 try {
     $raw = [System.Console]::In.ReadToEnd()
     if (-not $raw.Trim()) { exit 0 }
