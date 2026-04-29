@@ -74,6 +74,9 @@ try {
         }
     }
 
+    # Skip model-switch phantom calls: no user prompt + minimal input tokens
+    if (-not $lastPrompt -and $inputTokens -le 5) { exit 0 }
+
     Invoke-LogRotation -Path $combinedFile
     $combinedEntry = [ordered]@{
         timestamp                   = $entry.timestamp
