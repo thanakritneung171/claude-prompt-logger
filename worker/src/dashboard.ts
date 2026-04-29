@@ -30,7 +30,8 @@ function shortId(id: string): string {
 function preview(text: string | null, len = 100): string {
   if (!text) return '<span class="muted">—</span>';
   const t = text.trim().replace(/\s+/g, ' ');
-  return esc(t.length > len ? t.slice(0, len) + '…' : t);
+  if (t.length <= len) return esc(t);
+  return `${esc(t.slice(0, len))}… <button class="btn-prompt" data-full="${esc(t)}" onclick="showPrompt(this)">ดูทั้งหมด</button>`;
 }
 
 const CSS = `
@@ -76,6 +77,16 @@ const CSS = `
   #popup p { font-size:17px; font-weight:600; color:#166534; margin-bottom:24px; }
   #popup a { display:inline-block; background:#1a1200; color:#f5d87a; padding:10px 36px; border-radius:8px; font-size:14px; font-weight:700; text-decoration:none; }
   #popup a:hover { background:#2d2006; }
+  .btn-prompt { background:none; border:none; color:#9a7a2a; font-size:11px; cursor:pointer; text-decoration:underline; padding:0 0 0 4px; font-weight:600; }
+  .btn-prompt:hover { color:#1a1200; }
+  #prompt-modal { position:fixed; inset:0; background:#00000060; z-index:1000; display:none; align-items:center; justify-content:center; }
+  #prompt-modal.open { display:flex; }
+  .pm-box { background:#fff; border-radius:10px; padding:24px; max-width:720px; width:90%; box-shadow:0 8px 40px #0003; }
+  .pm-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .pm-header h3 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#9a7a2a; }
+  .pm-close { background:none; border:none; font-size:20px; cursor:pointer; color:#9a7a2a; line-height:1; padding:0 4px; }
+  .pm-close:hover { color:#1a1200; }
+  .pm-body { font-size:13px; line-height:1.75; color:#2d2006; white-space:pre-wrap; word-break:break-word; max-height:65vh; overflow-y:auto; background:#faf6ec; border-radius:6px; padding:16px; border:1px solid #e8dfc0; }
 `;
 
 export function clearPage(error?: string): string {
@@ -205,6 +216,29 @@ export function dashboardPage(data: DashboardData, cleared = false): string {
       </table>
     </section>
   </main>
+
+  <div id="prompt-modal" onclick="if(event.target===this)closePrompt()">
+    <div class="pm-box">
+      <div class="pm-header">
+        <h3>Full Prompt</h3>
+        <button class="pm-close" onclick="closePrompt()">✕</button>
+      </div>
+      <div id="pm-body" class="pm-body"></div>
+    </div>
+  </div>
+
+  <script>
+    function showPrompt(btn) {
+      document.getElementById('pm-body').textContent = btn.dataset.full;
+      document.getElementById('prompt-modal').classList.add('open');
+    }
+    function closePrompt() {
+      document.getElementById('prompt-modal').classList.remove('open');
+    }
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closePrompt();
+    });
+  </script>
 </body>
 </html>`;
 }
