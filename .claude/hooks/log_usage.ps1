@@ -23,9 +23,9 @@ try {
 
     $lastUsage = $null
     $lastModel = ""
-    Get-Content $transcriptPath -Encoding UTF8 | ForEach-Object {
+    foreach ($rawLine in [System.IO.File]::ReadAllLines($transcriptPath, [System.Text.Encoding]::UTF8)) {
         try {
-            $line = $_ | ConvertFrom-Json
+            $line = $rawLine | ConvertFrom-Json
             if ($line.type -eq "assistant" -and $null -ne $line.message.usage) {
                 $lastUsage = $line.message.usage
                 $lastModel = if ($line.message.model) { [string]$line.message.model } else { "" }
