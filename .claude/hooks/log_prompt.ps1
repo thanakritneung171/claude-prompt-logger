@@ -5,7 +5,6 @@ $ErrorActionPreference = "SilentlyContinue"
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $libPath     = Join-Path $PSScriptRoot "lib\common.ps1"
 $logFile     = Join-Path $projectRoot "logs\prompts.jsonl"
-$summaryFile = Join-Path $projectRoot "logs\summary.log"
 
 . $libPath
 
@@ -38,10 +37,6 @@ try {
     Send-LogToWorker -Endpoint "/api/prompt" -Body $entry
 
 } catch {
-    try {
-        $errMsg = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] log_prompt error: $_`n"
-        [System.IO.File]::AppendAllText($summaryFile, $errMsg, [System.Text.Encoding]::UTF8)
-    } catch { }
 }
 
 exit 0

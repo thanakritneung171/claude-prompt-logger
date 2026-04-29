@@ -4,10 +4,7 @@ $ErrorActionPreference = "SilentlyContinue"
 
 $projectRoot   = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $libPath       = Join-Path $PSScriptRoot "lib\common.ps1"
-$logFile       = Join-Path $projectRoot "logs\usage.jsonl"
-$combinedFile  = Join-Path $projectRoot "logs\combined.jsonl"
 $promptsFile   = Join-Path $projectRoot "logs\prompts.jsonl"
-$summaryFile   = Join-Path $projectRoot "logs\summary.log"
 
 . $libPath
 
@@ -44,8 +41,6 @@ try {
     $cacheRead    = [int]($lastUsage.cache_read_input_tokens       ?? 0)
     $total        = $inputTokens + $outputTokens + $cacheCreate + $cacheRead
 
-    Invoke-LogRotation -Path $logFile
-
     $entry = [ordered]@{
         timestamp                   = (Get-Date -Format "yyyy-MM-ddTHH:mm:sszzz")
         session_id                  = $sessionId
@@ -57,7 +52,6 @@ try {
         total_tokens                = $total
     }
 
-    Write-LogEntry -Path $logFile -Object $entry
     Send-LogToWorker -Endpoint "/api/usage" -Body $entry
 
     # Build combined record: last prompt for this session + token usage
@@ -77,28 +71,7 @@ try {
     # Skip model-switch phantom calls: no user prompt + minimal input tokens
     if (-not $lastPrompt -and $inputTokens -le 5) { exit 0 }
 
-    Invoke-LogRotation -Path $combinedFile
-    $combinedEntry = [ordered]@{
-        timestamp                   = $entry.timestamp
-        session_id                  = $sessionId
-        model                       = $lastModel
-        prompt                      = $lastPrompt
-        input_tokens                = $inputTokens
-        output_tokens               = $outputTokens
-        cache_creation_input_tokens = $cacheCreate
-        cache_read_input_tokens     = $cacheRead
-        total_tokens                = $total
-    }
-    Write-LogEntry -Path $combinedFile -Object $combinedEntry
-
-    $summaryLine = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] session=$sessionId model=$lastModel in=$inputTokens out=$outputTokens cache_read=$cacheRead total=$total`n"
-    [System.IO.File]::AppendAllText($summaryFile, $summaryLine, [System.Text.Encoding]::UTF8)
-
 } catch {
-    try {
-        $errMsg = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] log_usage error: $_`n"
-        [System.IO.File]::AppendAllText($summaryFile, $errMsg, [System.Text.Encoding]::UTF8)
-    } catch { }
 }
 
 exit 0
